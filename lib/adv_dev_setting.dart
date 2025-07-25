@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:NESmartConnect/services/api_service.dart';
+import 'package:NESmartConnect/services/sms_parser_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -76,6 +77,7 @@ class _AdvDevSettingsState extends State<AdvDevSettings> {
   @override
   void initState() {
     super.initState();
+    platform.invokeMethod('startFg');
     _hostNumber = widget.deviceNumber; // Set host number initially
     _loadSavedData().then((_) async {
       await _readInitialSms();
@@ -205,72 +207,122 @@ class _AdvDevSettingsState extends State<AdvDevSettings> {
     }
   }
 
-  Future<void> _setupChannel() async {
-    print('AdvDevSettings: SetupChannel: Setting up MethodChannel for ${widget.deviceNumber}');
+Future<void> _setupChannel() async {
+    print('AdvDevSettings: SetupChannel for ${widget.deviceNumber}');
     platform.setMethodCallHandler((call) async {
-      if (call.method == 'onSmsReceived') {
-        final params = call.arguments as Map;
-        print('AdvDevSettings: onSmsReceived: Received params $params');
-        if (mounted) {
-          setState(() {
-            _hasReceivedLtiUpdate = true;
-            _overloadTrip = '${params['overloadTripTime']?.toString().replaceAll(' Sec', '') ?? _overloadTrip.replaceAll(' Sec', '')} Sec';
+      // ──────────────────────────────────────────────────────────────
+      // 1. NEW branch: raw SMS arrives from native side
+      // ──────────────────────────────────────────────────────────────
+      if (call.method == 'onRawSmsReceived') {
+        final raw = call.arguments as Map;
+        final smsService = SmsService();
+        final params = await smsService.parseSms(
+          raw['messageBody'] ?? '',
+          raw['phoneNumber'] ?? widget.deviceNumber,
+          raw['timestamp'] ?? DateTime.now().millisecondsSinceEpoch,
+        );
+
+        if (!mounted) return;
+
+        setState(() {
+          _hasReceivedLtiUpdate = true;
+
+          // Overload Trip (seconds)
+          if (params['overloadTripTime'] != null &&
+              params['overloadTripTime'] != 'N/A') {
+            _overloadTrip =
+                '${params['overloadTripTime'].toString().padLeft(3, '0')} Sec';
             _overloadTripController.text = _overloadTrip.replaceAll(' Sec', '');
-            _voltageTrip = '${params['voltageTripTime']?.toString().replaceAll(' Sec', '') ?? _voltageTrip.replaceAll(' Sec', '')} Sec';
+          }
+
+          // Voltage Trip (seconds)
+          if (params['voltageTripTime'] != null &&
+              params['voltageTripTime'] != 'N/A') {
+            _voltageTrip =
+                '${params['voltageTripTime'].toString().padLeft(3, '0')} Sec';
             _voltageTripController.text = _voltageTrip.replaceAll(' Sec', '');
-            _dryRunTrip = '${params['dryRunTripTime']?.toString().replaceAll(' Sec', '') ?? _dryRunTrip.replaceAll(' Sec', '')} Sec';
+          }
+
+          // Dry-Run Trip (seconds)
+          if (params['dryRunTripTime'] != null &&
+              params['dryRunTripTime'] != 'N/A') {
+            _dryRunTrip =
+                '${params['dryRunTripTime'].toString().padLeft(3, '0')} Sec';
             _dryRunTripController.text = _dryRunTrip.replaceAll(' Sec', '');
-            _singlePhaseTrip = '${params['singlePhaseTripTime']?.toString().replaceAll(' Sec', '') ?? _singlePhaseTrip.replaceAll(' Sec', '')} Sec';
-            _singlePhaseTripController.text = _singlePhaseTrip.replaceAll(' Sec', '');
-            _maxRuntime = params['maxRunTime']?.toString() ?? _maxRuntime;
-            _maxRuntimeController.text = _maxRuntime;
-            _maxRuntimeDigits = _timeToDigitsHHMMSS(_maxRuntime);
-            _dryRunRestart = params['dryRunRestartTime']?.toString() ?? _dryRunRestart;
-            _dryRunRestartController.text = _dryRunRestart;
-            _dryRunRestartDigits = _timeToDigitsHHMM(_dryRunRestart);
-            _feedbackDelay = '${params['feedbackDelayTime']?.toString().replaceAll(' Sec', '') ?? _feedbackDelay.replaceAll(' Sec', '')} Sec';
-            _feedbackDelayController.text = _feedbackDelay.replaceAll(' Sec', '');
-            _hostNumber = widget.deviceNumber;
-            _saveData();
-            print('AdvDevSettings: LTI Updated Values:');
-            print('Overload Trip: $_overloadTrip');
-            print('Voltage Trip: $_voltageTrip');
-            print('Dry Run Trip: $_dryRunTrip');
-            print('Single Phase Trip: $_singlePhaseTrip');
-            print('Max Runtime: $_maxRuntime');
-            print('Dry Run Restart: $_dryRunRestart');
-            print('Feedback Delay: $_feedbackDelay');
-            print('Host Number: $_hostNumber');
-          });
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Response Received: Updated')),
+          }
+
+          // Single-Phase Trip (seconds)
+          if (params['singlePhaseTripTime'] != null &&
+              params['singlePhaseTripTime'] != 'N/A') {
+            _singlePhaseTrip =
+                '${params['singlePhaseTripTime'].toString().padLeft(3, '0')} Sec';
+            _singlePhaseTripController.text = _singlePhaseTrip.replaceAll(
+              ' Sec',
+              '',
             );
           }
-        }
-      } else if (call.method == 'responseReceived') {
+
+          // Max Runtime (HH:MM:SS)
+          if (params['maxRunTime'] != null && params['maxRunTime'] != 'N/A') {
+            _maxRuntime = params['maxRunTime'].toString();
+            _maxRuntimeController.text = _maxRuntime;
+            _maxRuntimeDigits = _timeToDigitsHHMMSS(_maxRuntime);
+          }
+
+          // Dry-Run Restart (HH:MM)
+          if (params['dryRunRestartTime'] != null &&
+              params['dryRunRestartTime'] != 'N/A') {
+            _dryRunRestart = params['dryRunRestartTime'].toString();
+            _dryRunRestartController.text = _dryRunRestart;
+            _dryRunRestartDigits = _timeToDigitsHHMM(_dryRunRestart);
+          }
+
+          // Feedback Delay (seconds)
+          if (params['feedbackDelayTime'] != null &&
+              params['feedbackDelayTime'] != 'N/A') {
+            _feedbackDelay =
+                '${params['feedbackDelayTime'].toString().padLeft(2, '0')} Sec';
+            _feedbackDelayController.text = _feedbackDelay.replaceAll(
+              ' Sec',
+              '',
+            );
+          }
+
+          // Host number never comes from SMS, keep widget.deviceNumber
+          _hostNumber = widget.deviceNumber;
+
+          _saveData();
+        });
+
         if (mounted) {
-          setState(() {
-            _isAwaitingResponse = false;
-            _awaitingResponseTimer?.cancel();
-            print('AdvDevSettings: responseReceived: Awaiting response cleared');
-          });
-        }
-      } else if (call.method == 'responseTimeout') {
-        if (mounted) {
-          setState(() {
-            _isAwaitingResponse = false;
-            _awaitingResponseTimer?.cancel();
-            print('AdvDevSettings: responseTimeout: Awaiting response cleared due to timeout');
-          });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Response Timed Out')),
+            const SnackBar(content: Text('Response Received: Updated')),
           );
-          await _readInitialSms();
         }
+      }
+      // ──────────────────────────────────────────────────────────────
+      // 2. Response from native method-channel calls
+      // ──────────────────────────────────────────────────────────────
+      else if (call.method == 'responseReceived') {
+        if (!mounted) return;
+        setState(() {
+          _isAwaitingResponse = false;
+          _awaitingResponseTimer?.cancel();
+        });
+      } else if (call.method == 'responseTimeout') {
+        if (!mounted) return;
+        setState(() {
+          _isAwaitingResponse = false;
+          _awaitingResponseTimer?.cancel();
+        });
+        // ScaffoldMessenger.of(
+        //   context,
+        // ).showSnackBar(const SnackBar(content: Text('Response Timed Out')));
+        await _readInitialSms(); // fall back to inbox query
       }
     });
   }
+
 
 Future<void> _sendSms(String message) async {
   if (_isAwaitingResponse) return;
@@ -296,6 +348,16 @@ Future<void> _sendSms(String message) async {
     _isAwaitingResponse = true;
     print('SendSms: Sending message "$message" to ${widget.deviceNumber} from ${widget.deviceCont}');
   });
+  Timer(const Duration(seconds: 45), () {
+      if (mounted && _isAwaitingResponse) {
+        setState(() {
+          _isAwaitingResponse = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Response Timed Out After 45 Seconds')),
+        );
+      }
+    });
   
   try {
     await platform.invokeMethod('sendSmsAndWaitForResponse', {
@@ -414,6 +476,7 @@ Future<void> _sendSms(String message) async {
 
   @override
   void dispose() {
+  platform.invokeMethod('stopFg');
   _awaitingResponseTimer?.cancel();
   _overloadTripController.dispose();
   _voltageTripController.dispose();
