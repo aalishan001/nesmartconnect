@@ -51,7 +51,14 @@ class MainActivity : FlutterActivity() {
         android.Manifest.permission.SEND_SMS,
         android.Manifest.permission.RECEIVE_SMS,
         android.Manifest.permission.READ_PHONE_STATE,
-        android.Manifest.permission.READ_PHONE_NUMBERS
+        android.Manifest.permission.READ_PHONE_NUMBERS,
+        android.Manifest.permission.INTERNET,
+        android.Manifest.permission.WAKE_LOCK,
+        android.Manifest.permission.FOREGROUND_SERVICE,
+        android.Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+        android.Manifest.permission.RECEIVE_BOOT_COMPLETED,
+        android.Manifest.permission.POST_NOTIFICATIONS,
+        android.Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC
     )
 @RequiresApi(Build.VERSION_CODES.M)
 private fun promptIgnoreBatteryOpt() {
@@ -94,6 +101,16 @@ private fun promptIgnoreBatteryOpt() {
             } else {
                 initializeApp()
             }
+        }
+    }
+
+        override fun onResume() {
+        super.onResume()
+        // This is called when the user returns to the app, e.g., from the settings screen.
+        // We check permissions again and initialize if they've been granted.
+        if (arePermissionsGranted() && !receiverRegistered) {
+            WebhookLogger.logEvent("APP_RESUMED_WITH_PERMISSIONS", emptyMap(), this)
+            initializeApp()
         }
     }
 

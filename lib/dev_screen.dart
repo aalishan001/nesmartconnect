@@ -1609,7 +1609,7 @@ Timer(const Duration(seconds: 45), () {
                                   ),
                                   padding: EdgeInsets.all(8.0),
                                   child: Icon(
-                                    Icons.settings_outlined,
+                                    Icons.alarm_add_outlined,
                                     size: 24.0,
                                   ),
                                 ),

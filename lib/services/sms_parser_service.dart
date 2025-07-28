@@ -203,6 +203,7 @@ if (messages.isNotEmpty) {
         r'MOTOR:\s*ON|Motor\s+successfully\s+Turned\s+ON|Motor\s+Turned\s+ON',
         caseSensitive: false,
       );
+
       final slideroffPattern = RegExp(
         r'MOTOR:\s*OFF|Motor\s+successfully\s+Turned\s+OFF|Motor\s+Turned\s+OFF|MOTOR:\s*[^\n]*(?:error|fail|failed|failure)[^\n]*|Motor\s+Turned\s+Off\s+[^\n]*(?:error|fail|failed|failure)[^\n]*|[^\n]*(?:error|fail|failed|failure)[^\n]*|^Power\s+is\s+back',
         caseSensitive: false,
@@ -412,10 +413,12 @@ if (messages.isNotEmpty) {
 
       // Daily SMS count (simplified for Dart)
       params['d'] = await _getDailyCount(phoneNumber);
-
+      
+      bool sliderison = false;
       // Motor state
       if (slideronPattern.hasMatch(message)) {
         params['motorState'] = true;
+        sliderison = true;
       } else if (slideroffPattern.hasMatch(message)) {
         params['motorState'] = false;
         params['countdownMode'] = 'N/A';
@@ -423,6 +426,7 @@ if (messages.isNotEmpty) {
         params['countdownSince'] = '00:00:00';
         params['countdownTarget'] = '00:00:00';
         params['countdownDismissed'] = false;
+        sliderison = false;
       }
 
       // Error detection
@@ -523,7 +527,7 @@ final setOnPattern = RegExp(
         caseSensitive: false,
       );
       final dismissPattern = RegExp(
-        r'Set Run Time Completed',
+        r'Time Completed',
         caseSensitive: false,
       );
       if (dismissPattern.hasMatch(message)) {
@@ -561,6 +565,7 @@ final setOnPattern = RegExp(
             'COUNTDOWN_DEBUG: sinceTime: $sinceTime, targetTime: $targetTime',
           );
           if (!containsError) {
+            if (mode.toLowerCase()=='cyclic'){
             params['countdownMode'] = mode;
             params['countdownStatus'] = status;
             params['countdownSince'] = sinceTime;
@@ -572,6 +577,33 @@ final setOnPattern = RegExp(
             );
             params['countdownTarget'] = _formatDate(motorOnTill);
             params['countdownDismissed'] = false;
+          } else if (mode.toLowerCase()=='shift timer' || mode.toLowerCase()=='daily auto'){
+            if (sliderison == true) {
+                params['countdownMode'] = mode;
+                params['countdownStatus'] = status;
+                params['countdownSince'] = sinceTime;
+                final motorOnTill = _calculateMotorOnTill(
+                  DateTime.fromMillisecondsSinceEpoch(responsestamp),
+                  sinceTime,
+                  targetTime,
+                  mode,
+                );
+                params['countdownTarget'] = _formatDate(motorOnTill);
+                params['countdownDismissed'] = false;
+            }else {
+              params['countdownMode'] = 'N/A';
+              params['countdownStatus'] = 'N/A';
+              params['countdownSince'] = '00:00:00';
+              params['countdownTarget'] = '00:00:00';
+              params['countdownDismissed'] = false;
+            }
+          } else {
+            params['countdownMode'] = 'N/A';
+            params['countdownStatus'] = 'N/A';
+            params['countdownSince'] = '00:00:00';
+            params['countdownTarget'] = '00:00:00';
+            params['countdownDismissed'] = false;
+          }
           } else {
             params['countdownMode'] = 'N/A';
             params['countdownStatus'] = 'N/A';
